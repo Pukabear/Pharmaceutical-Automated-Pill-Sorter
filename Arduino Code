@@ -1,0 +1,202 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <TCS3200.h>
+#include <Servo.h> // For servo motors
+
+// Pins for LEDs
+const int greenLED = 7;
+const int redLED = 8;
+
+// Motor driver pins for conveyor belt
+const int conveyorMotor1 = 9; // DC Motor 1
+const int conveyorMotor2 = 10; // DC Motor 2
+
+// Pin for sorting servo motor
+const int sortingServoPin = 3;
+
+// Color sensor pins
+const int S0 = 4;
+const int S1 = 5;
+const int S2 = 6;
+const int S3 = 7;
+const int sensorOut = 8;
+
+// Initialize LCD
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Initialize color sensor
+TCS3200 colorSensor(S2, S3, sensorOut);
+
+// Initialize servo motor for sorting
+Servo sortingServo;
+
+// Initialize buzzer
+const int buzzerPin = 13;
+
+// Timing variables
+unsigned long lastPillTime = 0;
+const unsigned long noPillDelay = 5000; // 5 seconds
+
+// Pill counts
+int redPillCount = 0;
+int greenPillCount = 0;
+int bluePillCount = 0;
+int whitePillCount = 0;
+
+void setup() {
+  // Initialize serial communication
+  Serial.begin(9600);
+
+  // Initialize LCD
+  lcd.begin();
+  lcd.backlight();
+
+  // Initialize LEDs
+  pinMode(greenLED, OUTPUT);
+  pinMode(redLED, OUTPUT);
+
+  // Initialize motor driver for conveyor belt
+  pinMode(conveyorMotor1, OUTPUT);
+  pinMode(conveyorMotor2, OUTPUT);
+
+  // Initialize color sensor
+  colorSensor.setFilter(TCS3200::RGB);
+  colorSensor.setFrequency(TCS3200::PRESCALE_20);
+
+  // Initialize sorting servo
+  sortingServo.attach(sortingServoPin);
+
+  // Initialize buzzer
+  pinMode(buzzerPin, OUTPUT);
+
+  // Start conveyor belt
+  startConveyorBelt();
+}
+
+void loop() {
+  // Read color sensor values
+  int red = colorSensor.readRed();
+  int green = colorSensor.readGreen();
+  int blue = colorSensor.readBlue();
+
+  // Display color values on LCD
+  lcd.setCursor(0, 0);
+  lcd.print("R:");
+  lcd.print(red);
+  lcd.setCursor(8, 0);
+  lcd.print("G:");
+  lcd.print(green);
+  lcd.setCursor(0, 1);
+  lcd.print("B:");
+  lcd.print(blue);
+
+  // Determine pill color and sort
+  bool pillDetected = false;
+  if (isPillRed(red, green, blue)) {
+    sortPill(45); // Red: 45 degrees
+    redPillCount++;
+    pillDetected = true;
+  } else if (isPillGreen(red, green, blue)) {
+    sortPill(90); // Green: 90 degrees
+    greenPillCount++;
+    pillDetected = true;
+  } else if (isPillBlue(red, green, blue)) {
+    sortPill(135); // Blue: 135 degrees
+    bluePillCount++;
+    pillDetected = true;
+  } else if (isPillWhite(red, green, blue)) {
+    sortPill(180); // White: 180 degrees
+    whitePillCount++;
+    pillDetected = true;
+  } else {
+    lcd.setCursor(0, 1);
+    lcd.print("Unknown");
+  }
+
+  // Update time if a pill is detected
+  if (pillDetected) {
+    lastPillTime = millis();
+  }
+
+  // Check if no pill has been detected for 5 seconds
+  if (millis() - lastPillTime >= noPillDelay) {
+    displayPillCounts();
+    lastPillTime = millis(); // Reset the timer
+  }
+
+  // Wait before checking again
+  delay(1000);
+}
+
+void startConveyorBelt() {
+  analogWrite(conveyorMotor1, 255); // Forward
+  analogWrite(conveyorMotor2, 255); // Forward
+}
+
+void stopConveyorBelt() {
+  analogWrite(conveyorMotor1, 0);
+  analogWrite(conveyorMotor2, 0);
+}
+
+void sortPill(int angle) {
+  sortingServo.write(angle); // Move servo to the specified angle for sorting
+
+  tone(buzzerPin, 1000); // 1 kHz
+  delay(500); // Buzz for 500 ms
+  noTone(buzzerPin);
+
+  // Stop conveyor belt after sorting
+  stopConveyorBelt();
+}
+
+bool isPillRed(int red, int green, int blue) {
+  // Define color thresholds for Red pills
+  int redThreshold = 150;
+  int greenThreshold = 50;
+  int blueThreshold = 50;
+
+  return (red > redThreshold && green < greenThreshold && blue < blueThreshold);
+}
+
+bool isPillGreen(int red, int green, int blue) {
+  // Define color thresholds for Green pills
+  int redThreshold = 50;
+  int greenThreshold = 150;
+  int blueThreshold = 50;
+
+  return (red < redThreshold && green > greenThreshold && blue < blueThreshold);
+}
+
+bool isPillBlue(int red, int green, int blue) {
+  // Define color thresholds for Blue pills
+  int redThreshold = 50;
+  int greenThreshold = 50;
+  int blueThreshold = 150;
+
+  return (red < redThreshold && green < greenThreshold && blue > blueThreshold);
+}
+
+bool isPillWhite(int red, int green, int blue) {
+  // Define color thresholds for White pills
+  int redThreshold = 150;
+  int greenThreshold = 150;
+  int blueThreshold = 150;
+
+  return (red > redThreshold && green > greenThreshold && blue > blueThreshold);
+}
+
+void displayPillCounts() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("R:");
+  lcd.print(redPillCount);
+  lcd.setCursor(8, 0);
+  lcd.print("G:");
+  lcd.print(greenPillCount);
+  lcd.setCursor(0, 1);
+  lcd.print("B:");
+  lcd.print(bluePillCount);
+  lcd.setCursor(8, 1);
+  lcd.print("W:");
+  lcd.print(whitePillCount);
+}
